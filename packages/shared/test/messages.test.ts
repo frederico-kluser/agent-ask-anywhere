@@ -23,16 +23,22 @@ describe('WSMessageSchema', () => {
   });
 
   it('parses flow:run with default empty slots', () => {
-    const r = WSMessageSchema.safeParse({ type: 'flow:run', flowId: 'send' });
+    const r = WSMessageSchema.safeParse({ type: 'flow:run', flowId: 'send', runId: 'run-1' });
     assert.equal(r.success, true);
     if (r.success && r.data.type === 'flow:run') {
       assert.deepEqual(r.data.slots, {});
     }
   });
 
-  it('parses step:result with optional runId', () => {
+  it('rejects flow:run without runId (now required for multiplex)', () => {
+    const r = WSMessageSchema.safeParse({ type: 'flow:run', flowId: 'send' });
+    assert.equal(r.success, false);
+  });
+
+  it('parses step:result with required runId', () => {
     const r = WSMessageSchema.safeParse({
       type: 'step:result',
+      runId: 'run-1',
       stepIdx: 0,
       ok: true,
       durationMs: 12,
@@ -40,9 +46,20 @@ describe('WSMessageSchema', () => {
     assert.equal(r.success, true);
   });
 
+  it('parses peer:register with role', () => {
+    const r = WSMessageSchema.safeParse({ type: 'peer:register', role: 'extension' });
+    assert.equal(r.success, true);
+  });
+
+  it('rejects peer:register with unknown role', () => {
+    const r = WSMessageSchema.safeParse({ type: 'peer:register', role: 'fart' });
+    assert.equal(r.success, false);
+  });
+
   it('rejects step:result with negative stepIdx', () => {
     const r = WSMessageSchema.safeParse({
       type: 'step:result',
+      runId: 'run-1',
       stepIdx: -1,
       ok: true,
     });

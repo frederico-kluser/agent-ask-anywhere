@@ -2,36 +2,57 @@
 
 Briefing curto para Claude Code, Cursor, Copilot, Codex, Gemini ou qualquer
 agente de codificação trabalhando neste repositório. Para humanos: comece
-pelo [`README.md`](./README.md). Para profundidade técnica:
-[`docs/TECHNICAL.md`](./docs/TECHNICAL.md).
+pelo [`README.md`](./README.md).
 
 ## TL;DR
 
-`agent-ask-anywhere` é uma plataforma de browser automation híbrida
-(determinístico + LLM). Monorepo pnpm em **TypeScript estrito** com três
+`agent-ask-anywhere` é um **gerador de Agent Skills** com **lobby
+WebSocket auto-spawn**. Monorepo pnpm em **TypeScript estrito** com três
 packages:
 
 | Package | Papel | Runtime |
 |---|---|---|
-| `packages/shared` | Schemas Zod compartilhados (`WSMessage`, `Flow`, `SkillFrontmatter`, slots) | Browser + Node |
-| `packages/server` | Fastify (REST :7860) + WebSocket (:8765) + LLM orchestrator + skills manager | Node 20+ |
-| `packages/extension` | Extensão Chrome MV3 via WXT (background, offscreen, content, popup, options) | Chrome 116+ |
+| `packages/shared` | Schemas Zod (`WSMessage`, `Flow`, `SkillFrontmatter`, slots) | Browser + Node |
+| `packages/lobby` | Lobby Node mínima (HTTP + WS no :7878), zip generator, fs persistence | Node 20+ |
+| `packages/extension` | Extensão Chrome MV3 via WXT (background, offscreen, content, popup, options/wizard) | Chrome 116+ |
 
-A extensão grava skills via UI, persiste no servidor, e replay é
-determinístico (`synthetic` events, fallback `CDP`) com fallback agentic (LLM
-com tool calling) quando passos falham.
+A extensão grava skills via UI (recorder + wizard de slots), persiste no
+disco via lobby, e cada skill é exportada como zip plug-and-play com `run.js`
++ `lobby-bootstrap.js` (zero deps de npm). Replay é **determinístico**:
+synthetic events com fallback CDP. Slots são plain-text passados pelo
+agente de código que invoca a skill.
+
+## Arquitetura em 30s
+
+```
+┌────────────────────────────────────────────────┐
+│              Lobby (Node :7878)                │
+│   HTTP + WS no mesmo listener                  │
+│   ─ POST /run     ← skill cliente              │
+│   ─ POST /skills/zip ← wizard (extensão)       │
+│   ─ GET  /health  ← bootstrap                  │
+│   ─ WS /ws        ← extensão (full duplex)     │
+└─────────────┬───────────────────┬──────────────┘
+              │ WS                │ HTTP
+   ┌──────────▼─────────┐   ┌─────▼─────────────┐
+   │  Chrome extension  │   │  Skill clients    │
+   │  (offscreen + bg)  │   │  (run.js)         │
+   └────────────────────┘   └───────────────────┘
+```
+
+- **Lobby** auto-spawn detached pela 1ª skill (`lobby-bootstrap.js` no zip).
+- **Extensão** sempre conectada via WS no offscreen (MV3-safe).
+- **Skills** falam HTTP-only (POST /run); lobby faz multiplex via `runId`.
 
 ## Comandos
 
-Sempre rode na raiz:
-
 ```bash
 pnpm install         # bootstrap (postinstall gera ícones via sharp)
-pnpm typecheck       # tsc --noEmit em todos os packages (precisa passar)
-pnpm lint            # biome check (precisa passar)
-pnpm test            # node:test via tsx em shared/server
+pnpm typecheck       # tsc --noEmit em todos os packages
+pnpm lint            # biome check
+pnpm test            # node:test via tsx em shared/lobby
 pnpm build           # build de tudo
-pnpm dev:server      # roda servidor (precisa de ANTHROPIC_API_KEY p/ /chat)
+pnpm dev:lobby       # roda a lobby (HTTP+WS :7878)
 pnpm dev:extension   # WXT dev mode
 ```
 
@@ -41,19 +62,15 @@ pnpm dev:extension   # WXT dev mode
 agent-ask-anywhere/
 ├── packages/
 │   ├── shared/src/    flow-schema.ts, skill-schema.ts, messages.ts, slots.ts
-│   ├── server/src/    index.ts, ws.ts, secrets.ts
-│   │   ├── chat/      routes.ts                       (POST /chat → orchestrator)
-│   │   ├── llm/       provider.ts, anthropic.ts, tools.ts, orchestrator.ts, extension-rpc.ts
-│   │   └── skills/    manager.ts, routes.ts, recording-buffer.ts, run-history.ts, export-import.ts
+│   ├── lobby/src/     index.ts, ws.ts, http-routes.ts, run-broker.ts, lockfile.ts
+│   │   └── skills/    manager.ts, recording-buffer.ts, export-import.ts, template.ts
 │   └── extension/
-│       ├── entrypoints/  background.ts, content.ts, offscreen/, popup/, options/
+│       ├── entrypoints/  background.ts, content.ts, offscreen/, popup/, options/ (wizard)
 │       └── lib/
 │           ├── messaging.ts                              (Zod ExtMessage envelope)
 │           ├── recorder/  recorder.ts, overlay.ts, selectors.ts, xpath.ts
 │           ├── replay/    runner.ts, synthetic.ts, cdp.ts, captcha.ts, captcha-watch.ts, force-open-shadow.ts
-│           └── page/      ax-tree.ts                    (textual AX tree p/ LLM)
-├── docs/TECHNICAL.md
-├── AGENTS.md (este arquivo)
+│           └── page/      ax-tree.ts                    (textual AX tree)
 └── README.md
 ```
 
@@ -61,34 +78,26 @@ agent-ask-anywhere/
 
 1. **Zod nas bordas.** Toda mensagem WebSocket, todo body de REST, todo
    frontmatter de SKILL.md, todo flow.json passa por `safeParse` antes de
-   ser usado. Não confie em `unknown` chegando do mundo externo.
+   ser usado.
 
-2. **Slot `secret` é resolvido em `secrets.ts → resolveSecrets`** (server-side).
-   O LLM **nunca** recebe o valor; ele aparece apenas no `slots` que vai para
-   a extensão via `flow:run`. Qualquer mudança no orchestrator que vaze
-   secret no `tool_use.input` ou `tool_result` é uma regressão de segurança.
+2. **`runId` é obrigatório** em `flow:run`, `flow:result`, `step:result` —
+   é a chave de multiplex no `RunBroker` da lobby.
 
 3. **Selector chain do recorder filtra IDs/classes voláteis** (regex em
    `selectors.ts`: `^(ember-|react-|mui-|radix-|chakra-|css-|tw-|emotion-|sc-|jss)`).
-   Adicione novos prefixos quando descobrir mais frameworks; nunca relaxe a
-   filtragem.
 
 4. **Import de `.skill` valida zip-slip** (`export-import.ts`): cada entry é
-   resolvida com `path.resolve` e comparada via prefix com `safeRoot` (skills
-   root + `path.sep`). Não substitua essa lógica por uma regex.
+   resolvida com `path.resolve` e comparada via prefix com `safeRoot`.
 
 5. **`syntheticRunner` (`replay/synthetic.ts`) é self-contained** — injetado
-   via `chrome.scripting.executeScript({world:'MAIN'})`, que serializa via
-   `Function.prototype.toString`. **Sem closures, sem imports não inline.**
-   Quem editar essa função tem que verificar que o output continua
-   self-contained.
+   via `chrome.scripting.executeScript({world:'MAIN'})`. **Sem closures, sem
+   imports não inline.**
 
 6. **`FlowSchema` exige selectors com pelo menos um chain de pelo menos um
-   selector** — exceto em `press` (sem selector = usa `document.activeElement`)
-   e `scroll` (com x/y).
+   selector** — exceto em `press` e `scroll` (com x/y).
 
 7. **Manifest `key` (`.extension-key.txt`) é uma chave RSA pública** —
-   commitada de propósito para CRX-ID estável. Não remova.
+   commitada de propósito para CRX-ID estável.
 
 8. **Conexão Node↔Extensão = WebSocket localhost via offscreen document.**
    Service worker MV3 morre; o offscreen mantém o JS vivo. Heartbeat 20s,
@@ -96,98 +105,84 @@ agent-ask-anywhere/
 
 9. **Replay tem dois modos coexistindo:** synthetic (default, rápido) e CDP
    via `chrome.debugger` (fallback automático para "element not found", ou
-   forçado via `step.useCDP: true`). Mantenha os dois.
+   forçado via `step.useCDP: true`).
+
+10. **Lock-file da lobby** (`lockfile.ts`): `O_EXCL` no spawn evita
+    duplicação; check de `process.kill(pid, 0)` para detectar lobbies
+    órfãs e remover lock antigo.
+
+11. **Skill zips têm zero deps de npm.** `run.js` e `lobby-bootstrap.js` só
+    usam `node:http`, `node:fs`, `node:child_process`, `node:os`, `node:path`.
 
 ## Convenções de código
 
 - **TypeScript estrito** (`noUncheckedIndexedAccess`, `noImplicitOverride`,
-  `verbatimModuleSyntax`). Imports relativos com `.js` mesmo apontando para
-  `.ts` — exigência do `verbatimModuleSyntax`.
+  `verbatimModuleSyntax`). Imports relativos com `.js`.
 - **Biome** (não Prettier nem ESLint). Aspas simples, semicolons, trailing
   comma `all`, line width 100.
-- **Sem `any` implícito.** `noExplicitAny` está em `warn`, mas evite mesmo
-  assim.
-- **Sem dependências nativas novas** sem discussão (`keytar`, `node-pty`,
-  `better-sqlite3`). Trade-off de portabilidade ja foi pago em `secrets.json`.
-- **Logs via `pino`** (server) ou `console.log('[aaa/<area>]', ...)`
-  (extensão).
+- **Sem `any` implícito.**
+- **Logs via `pino`** (lobby) ou `console.log('[aaa/<area>]', ...)` (extensão).
 
 ## Onde mexer com cuidado
 
 | Arquivo | Risco | Por quê |
 |---|---|---|
-| `secrets.ts` | 🔴 alto | Vazamento de secret = breach. Tem `chmod 0600` defensivo. |
-| `export-import.ts` | 🔴 alto | Zip-slip = RCE arbitrário fora de `~/.local/agent-skills`. |
-| `synthetic.ts` | 🟡 médio | Função serializada; closure quebra silenciosamente. |
-| `cdp.ts` | 🟡 médio | Banner amarelo "está debugando" inevitável; comportamento sensível a versão do Chrome. |
-| `force-open-shadow.js` | 🟡 médio | Monkey patch frágil; sites com fingerprinting podem detectar. |
-| `manager.ts:gitCommit` | 🟢 baixo | `execSync` com mensagem JSON-quoted; não passe input do usuário sem escape. |
+| `lobby/src/skills/export-import.ts` | 🔴 alto | Zip-slip = RCE. |
+| `lobby/src/skills/template.ts` | 🟡 médio | `run.js`/`lobby-bootstrap.js` são strings literais; teste após editar. |
+| `lobby/src/lockfile.ts` | 🟡 médio | Race em spawn pode causar duplicate lobbies. |
+| `extension/lib/replay/synthetic.ts` | 🟡 médio | Função serializada; closure quebra silenciosamente. |
+| `extension/lib/replay/cdp.ts` | 🟡 médio | Banner amarelo "está debugando" inevitável. |
+| `force-open-shadow.js` | 🟡 médio | Monkey patch frágil. |
 
 ## Como adicionar um novo step type
 
-1. Adicione um `z.object({ type: z.literal('foo'), ... ...BaseStep })` no
+1. Adicione `z.object({ type: z.literal('foo'), ... ...BaseStep })` em
    `packages/shared/src/flow-schema.ts`.
-2. Trate o caso em `packages/extension/lib/replay/synthetic.ts:act` (se
-   aplicável).
-3. Trate o caso em `packages/extension/lib/replay/cdp.ts:executeViaCdp`.
-4. Se o step tem string com slots (URL, value), adicione em
+2. Trate o caso em `packages/extension/lib/replay/synthetic.ts:act`.
+3. Trate em `packages/extension/lib/replay/cdp.ts:executeViaCdp`.
+4. Se tem string com slots (URL, value), adicione em
    `packages/shared/src/slots.ts:fillStep`.
-5. Adicione um teste em `packages/shared/test/flow-schema.test.ts`.
-6. Atualize `docs/TECHNICAL.md` (tabela de step types).
+5. Teste em `packages/shared/test/flow-schema.test.ts`.
 
 ## Como adicionar um novo tipo de slot
 
 1. Adicione no enum `SlotTypeSchema` em
    `packages/shared/src/skill-schema.ts`.
-2. Se a resolução é server-side, trate em `packages/server/src/secrets.ts`
-   ou crie um análogo (ex: `dynamic` poderia chamar JS no servidor).
-3. Atualize prompt no `orchestrator.ts:SYSTEM_PROMPT_BASE` se o LLM precisa
-   saber lidar com ele.
-4. Adicione testes em `packages/shared/test/skill-schema.test.ts`.
-
-## Como rodar localmente sem ANTHROPIC_API_KEY
-
-Tudo continua funcionando. `/chat` responde 503. Use a extensão para gravar
-e replay manual via `POST /skills/:name` ou via WS `flow:run`.
+2. Adicione testes em `packages/shared/test/skill-schema.test.ts`.
 
 ## Variáveis de ambiente
 
 | Var | Default | Uso |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | — | Habilita `/chat` |
-| `AAA_LLM_MODEL` | `claude-sonnet-4-5` | Override do modelo |
-| `AAA_SKILLS_ROOT` | `~/.local/agent-skills` | Onde skills moram (útil em testes) |
-| `AAA_SECRETS_FILE` | `~/.config/agent-ask-anywhere/secrets.json` | Keystore (idem) |
-| `HTTP_PORT` | `7860` | Fastify |
-| `WS_PORT` | `8765` | WebSocket |
+| `AAA_LOBBY_HOST` | `127.0.0.1` | Host da lobby |
+| `AAA_LOBBY_PORT` | `7878` | Porta única (HTTP+WS) |
+| `AAA_SKILLS_ROOT` | `~/.local/share/agent-ask-anywhere/skills` | Onde skills moram |
+| `AAA_LOBBY_LOCK` | `~/.local/share/agent-ask-anywhere/lobby.lock` | Lock-file |
+| `AAA_LOBBY_BIN` | — | Path absoluto p/ binário da lobby (skills usam) |
 | `LOG_LEVEL` | `info` | pino |
 
 ## Don'ts
 
 - ❌ Não adicione um step que faça `eval(userInput)` — `waitForExpression`
-  já é o limite, e só roda em CDP quando a CSP bloqueia `unsafe-eval`.
-- ❌ Não logue `slots` no servidor (pode conter secret); só `Object.keys(slots)`.
+  já é o limite.
 - ❌ Não use `path.join` para validar entries do zip; use `path.resolve` +
   startsWith do safeRoot com separador.
-- ❌ Não chame `git config --global` em lugar nenhum — o `manager.ts` usa
-  `git -c user.name=... -c user.email=...` por commit, sem alterar config
-  do usuário.
-- ❌ Não introduza state do recorder fora de `recorder.ts` — typing buffer,
-  flush, special keys ficam todos lá.
+- ❌ Não introduza state do recorder fora de `recorder.ts`.
+- ❌ Não adicione deps de npm ao zip da skill — `run.js` precisa rodar com
+  só Node stdlib.
+- ❌ Não bloqueie a thread do main da lobby; chamadas devem ser async.
 
 ## Do's
 
-- ✅ Quando for editar `messages.ts`, atualize **ambos** os lados (server e
+- ✅ Quando for editar `messages.ts`, atualize **ambos** os lados (lobby e
   extensão) na mesma PR.
 - ✅ Para qualquer regex de validação que o usuário pode disparar, escreva
   um teste positivo + negativo.
-- ✅ Use `runId` em todo `step:result` e `flow:result` — `extension-rpc.ts`
-  agrupa por `runId` para permitir runs concorrentes.
-- ✅ Em `synthetic.ts`, ao adicionar um step type, lembre que **não há
-  acesso a closures** — funções helper têm que estar dentro do
-  `syntheticRunner`.
+- ✅ Use `runId` em todo `step:result`/`flow:result` — `RunBroker` agrupa
+  por `runId` para permitir runs concorrentes.
 
 ## Memória rápida ("se eu esquecer só uma coisa…")
 
-> **Tudo que cruza fronteira passa por Zod. Slot `secret` nunca toca o LLM.
-> Imports com `.js`. `synthetic.ts` é uma função sem closures.**
+> **Tudo que cruza fronteira passa por Zod. `runId` é a chave de multiplex.
+> Imports com `.js`. `synthetic.ts` é uma função sem closures. Skills zip
+> não têm deps de npm.**

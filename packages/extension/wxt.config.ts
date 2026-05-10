@@ -17,7 +17,7 @@ export default defineConfig({
     name: 'agent-ask-anywhere',
     short_name: 'AAA',
     description:
-      'Browser automation híbrida (determinístico + LLM) — grave skills, replay com self-healing.',
+      'Skill generator com lobby WebSocket auto-spawn — grave fluxos, gere .skill plug-and-play.',
     minimum_chrome_version: '116',
     ...(extensionKey ? { key: extensionKey } : {}),
     permissions: [
@@ -28,8 +28,6 @@ export default defineConfig({
       'debugger',
       'offscreen',
       'webNavigation',
-      'notifications',
-      'alarms',
     ],
     host_permissions: ['<all_urls>'],
     action: {

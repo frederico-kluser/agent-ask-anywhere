@@ -2,16 +2,46 @@
 
 # agent-ask-anywhere
 
-Grave fluxos no navegador clicando, deixe a extensão executar de novo no
-piloto automático — e, quando a página mudar de jeito, o **Claude** entra em
-cena para destravar. As skills ficam em arquivos versionáveis na sua
-máquina (formato **Agent Skills** da Anthropic), então você pode editar,
-versionar e compartilhar como qualquer outro repo.
+**Skill generator** com **lobby WebSocket auto-spawn**. Grave um fluxo
+clicando na página, edite no wizard, baixe um `.skill` (zip plug-and-play).
+Qualquer agente de código (Claude Code, Cursor, Codex, etc.) pode rodar a
+skill com `node run.js` — a primeira chamada acorda a lobby local
+automaticamente; chamadas seguintes são instantâneas.
 
-> **Status:** v1.0 — POC funcional em todas as 7 fases do roadmap. Veja
-> [`docs/TECHNICAL.md`](./docs/TECHNICAL.md) para o guia técnico completo
-> e [`AGENTS.md`](./AGENTS.md) se você for um agente LLM trabalhando no
-> repositório.
+> **Status:** v1.0 — refatoração para arquitetura "skill generator" feita.
+> Veja [`AGENTS.md`](./AGENTS.md) se você for um agente LLM trabalhando no
+> repo, e [`REFACTOR_REPORT.md`](./REFACTOR_REPORT.md) para o que mudou
+> nesta versão.
+
+---
+
+## Arquitetura em 30s
+
+```
+┌────────────────────────────────────────────────┐
+│              Lobby (Node :7878)                │
+│   HTTP + WS no mesmo listener                  │
+│   ─ POST /run     ← skill cliente              │
+│   ─ POST /skills/zip ← wizard (extensão)       │
+│   ─ GET  /health  ← bootstrap                  │
+└─────────────┬───────────────────┬──────────────┘
+              │ WS (full duplex)  │ HTTP
+   ┌──────────▼─────────┐   ┌─────▼─────────────┐
+   │  Chrome extension  │   │  Skill clients    │
+   │  (offscreen + bg)  │   │  (run.js)         │
+   └────────────────────┘   └───────────────────┘
+```
+
+- A **lobby** é um processo Node mínimo. Auto-spawn detached na primeira
+  chamada de qualquer skill (via `lobby-bootstrap.js` no zip).
+- A **extensão** mantém um WebSocket aberto com a lobby (offscreen
+  document, MV3-safe) e executa fluxos com synthetic events / CDP.
+- Cada **skill** é um zip `.skill` plug-and-play com `run.js`,
+  `flow.json`, `SKILL.md`, `lobby-bootstrap.js`, `meta.json`,
+  `package.json`, `INSTALL.md` — sem `npm install`.
+
+Multiplexação por `runId`: várias skills podem rodar concorrentemente
+porque cada `flow:run`/`flow:result` carrega o mesmo `runId`.
 
 ---
 
@@ -22,8 +52,6 @@ versionar e compartilhar como qualquer outro repo.
 - **Node.js 20+** (use o `.nvmrc`: `nvm use`)
 - **pnpm 11+** (`corepack enable && corepack prepare pnpm@11.0.9 --activate`)
 - **Chrome 116+** (precisa de `chrome.offscreen`)
-- *(opcional)* **`ANTHROPIC_API_KEY`** — sem ela, gravação/replay funcionam,
-  só o endpoint `/chat` (orchestrator LLM) responde 503.
 
 ### Instalação
 
@@ -33,14 +61,13 @@ cd agent-ask-anywhere
 pnpm install
 ```
 
-### Rodando
+### Rodando localmente (dev)
 
 Abra **dois terminais**:
 
 ```bash
-# terminal 1 — servidor (Fastify :7860 + WebSocket :8765)
-export ANTHROPIC_API_KEY=sk-ant-...   # opcional
-pnpm dev:server
+# terminal 1 — lobby (HTTP + WebSocket no :7878)
+pnpm dev:lobby
 ```
 
 ```bash
@@ -48,13 +75,11 @@ pnpm dev:server
 pnpm dev:extension
 ```
 
-Depois carregue a extensão no Chrome:
+Carregue a extensão no Chrome:
 
 1. `chrome://extensions/` → ative **Developer mode**
 2. **Load unpacked** → aponte para `packages/extension/.output/chrome-mv3/`
-3. O ID da extensão é estável entre máquinas (chave RSA fixa em `.extension-key.txt`)
-
-Quando o popup mostrar **"Connected to localhost:8765"**, está pronto.
+3. Quando o popup mostrar **"Connected to lobby :7878"**, está pronto.
 
 ---
 
@@ -63,40 +88,46 @@ Quando o popup mostrar **"Connected to localhost:8765"**, está pronto.
 ### 1. Gravar uma skill
 
 1. Clique no ícone da extensão → **● Start recording**
-2. Faça o fluxo na página: hovers mostram seletores em overlay, clicks são
-   capturados (e neutralizados — não disparam navegação real durante a
-   gravação), e o que você digita é gravado normalmente.
-3. **■ Stop recording**
+2. Faça o fluxo na página (clicks, typing, navegação são gravados)
+3. **■ Stop recording** — um draft é salvo em
+   `~/.local/share/agent-ask-anywhere/skills/draft-<timestamp>/`
 
-A skill é salva como pasta em `~/.local/agent-skills/draft-<timestamp>/`
-contendo `SKILL.md` (frontmatter YAML + descrição em markdown) e `flow.json`
-(passos do fluxo). Cada operação faz commit no git automaticamente.
+### 2. Refinar e exportar via wizard
 
-Edite o `SKILL.md` para dar um nome decente, descrever o objetivo, e declarar
-os **slots** (variáveis que o LLM vai preencher, tipo destinatário, valor,
-data, etc.). O servidor recarrega em ≤200 ms.
+1. Abra **Options → Skill wizard** (link no popup)
+2. Selecione o draft. O wizard sugere slots automaticamente para cada
+   `type`-step com valor literal — você pode renomeá-los, alterar tipo
+   (`string` / `choice` / `dynamic`), marcar/desmarcar required, ou
+   adicionar/remover.
+3. Edite nome (kebab-case), descrição, `SKILL.md` body.
+4. **Generate .skill (download)** — emite um zip plug-and-play.
+   **Save draft** salva no fs sem baixar.
 
-### 2. Executar via LLM
+### 3. Rodar a skill via agente de código
+
+Distribua o zip; descompacte; execute:
 
 ```bash
-curl -X POST http://127.0.0.1:7860/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "responda João no Teams dizendo que estou atrasado"}'
+node my-skill/run.js '{"recipient":"joao","message":"hello"}'
 ```
 
-O LLM lista as skills, escolhe a melhor, extrai os slots da sua mensagem, e
-chama `run_skill`. Slots do tipo `secret` são resolvidos no servidor a partir
-de `~/.config/agent-ask-anywhere/secrets.json` — **o LLM nunca vê o valor**.
+Na primeira chamada o `lobby-bootstrap.js` checa `:7878/health`. Se a
+lobby não estiver de pé, ele tenta spawnar via `AAA_LOBBY_BIN` ou
+`~/.local/bin/aaa-lobby`. Veja `INSTALL.md` no zip para detalhes.
 
-### 3. Gerenciar skills
+---
 
-A página de **Options** (`chrome://extensions/` → ícone → **Options**) tem:
+## Variáveis de ambiente
 
-- lista filtrável de skills com busca por nome/descrição
-- detalhes (slots, JSON do flow, runs recentes via JSONL)
-- **Export** `.skill` (zip) e **Import** (upload) para compartilhar entre
-  máquinas
-- **Delete** (com commit no git)
+| Var | Default | Uso |
+|---|---|---|
+| `AAA_LOBBY_HOST` | `127.0.0.1` | Host da lobby |
+| `AAA_LOBBY_PORT` | `7878` | Porta única (HTTP+WS) |
+| `AAA_SKILLS_ROOT` | `~/.local/share/agent-ask-anywhere/skills` | Onde drafts/skills moram |
+| `AAA_LOBBY_LOCK` | `~/.local/share/agent-ask-anywhere/lobby.lock` | Lock-file para spawn race |
+| `AAA_LOBBY_BIN` | — | Caminho absoluto para o binário da lobby (skills usam) |
+| `AAA_RUN_TIMEOUT_MS` | `300000` | Timeout por run (5min) |
+| `LOG_LEVEL` | `info` | pino |
 
 ---
 
@@ -104,76 +135,25 @@ A página de **Options** (`chrome://extensions/` → ícone → **Options**) tem
 
 | Problema | Causa provável | O que fazer |
 |---|---|---|
-| Popup mostra "Disconnected" | Servidor Node não está rodando | Verifique terminal 1 — `pnpm dev:server` |
-| Botão "Start recording" desabilitado | WS não conectou | Confira se a porta `8765` está livre, recarregue a extensão |
-| `/chat` retorna 503 | `ANTHROPIC_API_KEY` ausente | Exporte a chave **antes** de subir o servidor |
-| "missing slot: foo" no replay | Slot não preenchido pelo LLM ou faltando no payload | Cheque `frontmatter.slots[].required` no `SKILL.md` |
-| Banner amarelo "está debugando" | CDP foi anexado (esperado) | Ignore — só aparece quando o fallback CDP roda |
-| Captcha bloqueando | Detecção heurística pausou o fluxo | Resolva manualmente, o replay retoma sozinho (timeout 5min) |
-
-Para diagnóstico mais fundo, leia [`docs/TECHNICAL.md`](./docs/TECHNICAL.md).
+| Popup "Disconnected" | Lobby não rodando | `pnpm dev:lobby` (ou skill auto-spawna na 1ª chamada) |
+| `run.js` exit 3 | Lobby binário não encontrado | Defina `AAA_LOBBY_BIN` ou copie a lobby pra `~/.local/bin/aaa-lobby` |
+| `run.js` exit 4 com 503 | Lobby up mas extensão desconectada | Recarregue a extensão; cheque popup |
+| Lock-file órfão depois de `kill -9` | SIGKILL não roda exit-handler | Próxima skill detecta via `process.kill(pid,0)` e remove |
+| Captcha bloqueando | Heurística pausou o fluxo | Resolva manualmente, replay retoma (timeout 5min) |
 
 ---
 
-## Comunidade — como ajudar
-
-Esse projeto é um **POC público**. Toda contribuição é bem-vinda.
-
-### Reportar bugs e pedir features
-
-Abra uma issue contando:
-
-- **Versão do Chrome** (`chrome://version`)
-- **Plataforma** (Linux/macOS/Windows + arquitetura)
-- **Logs**: terminal do `pnpm dev:server` + console da extensão
-  (`chrome://extensions/` → background page → DevTools)
-- **Site afetado** (se for um bug de replay): URL, e se possível um pequeno
-  flow.json reproduzindo
-
-### Compartilhar skills
-
-Use **Options → Export** para gerar o `.skill` (zip) e abra um PR ou compartilhe
-no canal de discussões. Padrão: pasta com `SKILL.md` + `flow.json` + assets
-opcionais.
-
-> ⚠️ **Antes de publicar uma skill:** confira se `flow.json` não tem URLs,
-> emails, IDs internos ou dados de cliente. O recorder captura o que você
-> digitou — substitua por `{{slots}}` antes de compartilhar.
-
-### Contribuindo código
+## Comandos
 
 ```bash
 pnpm install
-pnpm typecheck   # TypeScript estrito em todos os packages
-pnpm lint        # Biome
-pnpm test        # node:test em shared/server
-pnpm build       # build de tudo
+pnpm dev:lobby       # roda a lobby (HTTP+WS :7878)
+pnpm dev:extension   # WXT dev mode
+pnpm typecheck       # tsc --noEmit em todos os packages
+pnpm lint            # biome check
+pnpm test            # node:test em shared/lobby
+pnpm build           # build de tudo
 ```
-
-Para entender a arquitetura antes de tocar no código, leia
-[`docs/TECHNICAL.md`](./docs/TECHNICAL.md). Se você é um agente LLM,
-[`AGENTS.md`](./AGENTS.md) tem o resumo das regras invioláveis.
-
-**Convenções rápidas:**
-
-- TypeScript estrito (`noUncheckedIndexedAccess`, `verbatimModuleSyntax`)
-- Imports relativos sempre com `.js` (mesmo apontando para `.ts`)
-- Zod em **todas** as bordas (WS, REST, frontmatter, flow.json)
-- Sem dependência nativa nova sem discussão (`keytar`, `node-pty` etc.)
-- Commits no estilo Conventional Commits (`feat:`, `fix:`, `chore:` …)
-
-### Roadmap aberto
-
-Itens conhecidos como "ainda não, mas seria bacana":
-
-- Step-through debugger UI (pause/resume/skip via WS)
-- Provedor LLM alternativo (OpenAI, Gemini, modelos locais via Ollama)
-- Integração com OS keychain (`keytar`) como alternativa ao
-  `secrets.json`
-- Compatibilidade com Firefox (já temos `pnpm dev:firefox`/`build:firefox`,
-  mas falta validar `chrome.offscreen` equivalente)
-
-Encontrou outra coisa? Abra uma issue marcando como `enhancement`.
 
 ---
 
@@ -181,10 +161,3 @@ Encontrou outra coisa? Abra uma issue marcando como `enhancement`.
 
 [MIT](./LICENSE) — use, modifique, redistribua. Apenas mantenha o aviso de
 copyright.
-
-## Agradecimentos
-
-Construído sobre [WXT](https://wxt.dev),
-[Anthropic SDK](https://github.com/anthropics/anthropic-sdk-typescript),
-[Fastify](https://fastify.dev), [@medv/finder](https://github.com/antonmedv/finder)
-e o conceito de **Agent Skills** da Anthropic.
