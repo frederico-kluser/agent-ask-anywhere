@@ -1,0 +1,11 @@
+packages:
+  - "packages/*"
+
+# Build scripts allowed to execute during install (pnpm 11+ requires explicit allow).
+# These deps publish prebuilt binaries via install scripts; without this, sharp
+# (icon generation) and biome (lint binary) would fail to set up correctly.
+allowBuilds:
+  '@biomejs/biome': true
+  esbuild: true
+  sharp: true
+  spawn-sync: true

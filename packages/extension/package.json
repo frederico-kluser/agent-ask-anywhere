@@ -1,0 +1,27 @@
+{
+  "name": "extension",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "build": "wxt build",
+    "build:firefox": "wxt build -b firefox",
+    "zip": "wxt zip",
+    "compile": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "wxt prepare && node scripts/gen-icons.mjs"
+  },
+  "dependencies": {
+    "@agent-ask-anywhere/shared": "workspace:*",
+    "@medv/finder": "^3.2.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "sharp": "^0.33.5",
+    "typescript": "^5.7.2",
+    "wxt": "^0.19.16"
+  }
+}

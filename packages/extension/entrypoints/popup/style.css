@@ -1,0 +1,88 @@
+:root {
+  color-scheme: light dark;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  width: 320px;
+}
+main {
+  padding: 14px 16px;
+}
+header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+header h1 {
+  font-size: 14px;
+  margin: 0;
+  font-weight: 600;
+}
+.version {
+  margin: 2px 0 0;
+  font-size: 11px;
+  opacity: 0.6;
+}
+section {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.status {
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.dot-on {
+  background: #2ecc40;
+  box-shadow: 0 0 6px rgba(46, 204, 64, 0.6);
+}
+.dot-off {
+  background: #777;
+}
+#record-btn {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+#record-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+#record-btn:hover:not(:disabled) {
+  background: rgba(127, 127, 127, 0.15);
+}
+#record-btn.is-recording {
+  background: #ff3e00;
+  border-color: #ff3e00;
+  color: #fff;
+}
+.hint {
+  margin: 10px 0 0;
+  opacity: 0.7;
+}
+.hint code {
+  font-family: ui-monospace, monospace;
+  background: rgba(127, 127, 127, 0.15);
+  padding: 1px 6px;
+  border-radius: 4px;
+}

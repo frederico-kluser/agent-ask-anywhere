@@ -1,0 +1,25 @@
+{
+  "name": "agent-ask-anywhere",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plataforma híbrida (determinístico + LLM) de browser automation com Agent Skills",
+  "packageManager": "pnpm@11.0.9",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev:server": "pnpm --filter server dev",
+    "dev:extension": "pnpm --filter extension dev",
+    "build": "pnpm -r build",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@types/node": "^20.14.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

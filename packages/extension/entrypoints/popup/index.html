@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>agent-ask-anywhere</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="/icon/48.png" alt="" width="32" height="32" />
+        <div>
+          <h1>agent-ask-anywhere</h1>
+          <p class="version">v1.0.0</p>
+        </div>
+      </header>
+      <section>
+        <p class="status">
+          <span id="dot" class="dot dot-off" aria-label="disconnected"></span>
+          <span id="status">Connecting…</span>
+        </p>
+        <button id="record-btn" type="button" disabled>●  Start recording</button>
+        <p class="hint">
+          Inicie o servidor com <code>pnpm dev:server</code>. Hover destaca
+          elementos; clicks/typing são gravados como <code>step:recorded</code>.
+        </p>
+      </section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
