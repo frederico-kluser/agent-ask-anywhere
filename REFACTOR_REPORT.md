@@ -263,6 +263,50 @@ Validações já feitas neste branch:
 
 ---
 
+---
+
+## Audit pass #1 (post-merge fixes)
+
+Após o primeiro commit, fiz uma **revisão crítica** procurando por falhas
+e pesquisei na internet sobre quirks de MV3 (Private Network Access,
+chrome.offscreen reasons, SW fetch a localhost). Encontrei e corrigi
+estes problemas:
+
+### Bugs encontrados
+
+| # | Bug | Severidade | Fix |
+|---|---|---|---|
+| 1 | `lockfile.ts` registrava handlers de `SIGINT`/`SIGTERM` que faziam `process.exit(0)`. Isso curtocircuitava o shutdown gracioso de `index.ts` (`httpServer.close()`), abortando in-flight requests. | 🔴 alto | Removidos os handlers de signal do `lockfile.ts`. Mantido apenas `process.on('exit', release)` como rede de proteção. O caller em `index.ts` chama `release()` no shutdown. |
+| 2 | `httpServer.on('upgrade')` rejeitava URLs com query string (`req.url !== '/ws'` falha em `/ws?token=…`). | 🟡 médio | Parse via `new URL(req.url, 'http://...').pathname` antes do match. |
+| 3 | Wizard rename fazia `DELETE` → `POST` sem pre-check; se o `POST` falhasse (ex.: nome já existe), o draft original era **perdido**. | 🔴 alto | Adicionado pre-check em `allSkills` por conflito; em caso de falha do POST, tenta `restore` com os dados originais. |
+| 4 | `template.ts` já passava `timeoutMs` mas sem comentário explicando — risco de regressão silenciosa em refactors futuros. | 🟢 baixo | Adicionado comentário documentando o invariante. |
+| 5 | `offscreen/main.ts`: listeners do `ws` antigo continuavam vivos após reconnect, podendo agendar reconnects duplicados se o `close` chegasse atrasado. | 🟡 médio | Cada handler captura o socket original via closure e early-returns se `ws !== sock` (não é mais o socket atual). |
+| 6 | `chrome.offscreen.createDocument({ reasons: ['BLOBS'] })`: BLOBS funciona mas é semanticamente errado (é pra `Blob`/`createObjectURL`). Pesquisa em `developer.chrome.com/docs/extensions/reference/api/offscreen` confirma que **só `AUDIO_PLAYBACK` tem auto-terminate de 30s**, mas reasons mismatched podem ser policiados em versões futuras. | 🟢 baixo | Trocado para `WORKERS` (mais idiomático para "JS keep-alive em background"). |
+| 7 | Permissões `notifications` e `alarms` no manifest não eram usadas — adiciona prompt de instalação sem ganho. | 🟢 baixo | Removidas. |
+| 8 | Descrição do manifest ainda mencionava "Browser automation híbrida (determinístico + LLM)" — desatualizado. | 🟢 baixo | Atualizado para "Skill generator com lobby WebSocket auto-spawn". |
+
+### Pesquisa MV3 (verificações que **NÃO** precisaram de fix)
+
+- **Private Network Access (Chrome 124+) / Local Network Access (Chrome 138+ opt-in, ~141 enforcement):** confirmado que extensões com `host_permissions` cobrindo o IP privado **estão exemptas** dos prompts de PNA/LNA (oficial: developer.chrome.com/blog/local-network-access). Setup atual está correto. Workaround se um dia bater: o lobby pode emitir `Access-Control-Allow-Private-Network: true` na preflight.
+- **SW fetch a `http://127.0.0.1`:** sem restrição. Loopback é tratado como secure origin em MV3. `host_permissions: ['<all_urls>']` cobre. Default CSP `connect-src` permite localhost.
+- **Offscreen + WebSocket:** documentação explícita de Chrome diz que `AUDIO_PLAYBACK` é o único reason com lifetime cap. Outros (incluindo `BLOBS` e `WORKERS`) **não auto-terminam**. Ambos funcionariam, mas `WORKERS` é mais semanticamente alinhado.
+
+### Novos testes
+
+- `test/template.test.ts`: **`node --check`** real via `execFileSync` no `run.js` e `lobby-bootstrap.js` gerados (catch syntax error que regex não pega) + verificação de `module.exports = { ensureLobby, ... }`
+- `test/run-broker.test.ts`: 5 cenários do RunBroker — peer registration, no-extension rejection, **multiplex de 2 runs concorrentes resolvendo out-of-order**, timeout cleanup, unregister.
+
+Total de testes: **85 → 92** (+7).
+
+### Validação final pós-fix
+
+- ✅ `pnpm typecheck` — 3/3 packages
+- ✅ `pnpm lint` — 58 files (1 a mais — arquivo de teste novo)
+- ✅ `pnpm test` — 92/92 (54 shared + 38 lobby)
+- ✅ `pnpm build` — extension chrome-mv3 219.58KB (era 219.03KB; +0.55KB do código de wizard atomicidade)
+
+---
+
 ## Próximos passos sugeridos (fora desta PR)
 
 1. **Empacotar lobby como single-file binary** (`pkg lobby/dist/index.js -t node20-linux-x64`) e drop em `~/.local/bin/aaa-lobby` no postinstall opcional.

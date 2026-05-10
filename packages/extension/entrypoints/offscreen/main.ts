@@ -29,9 +29,15 @@ function connect(): void {
     reconnectTimer = null;
   }
   console.log('[aaa/offscreen] connecting', WS_URL);
-  ws = new WebSocket(WS_URL);
+  const sock = new WebSocket(WS_URL);
+  ws = sock;
+  // Capture `sock` in each handler so events from a previous, stale socket
+  // don't bleed into the current state machine (e.g., a delayed `close`
+  // event on the old ws scheduling a duplicate reconnect).
+  const isCurrent = (): boolean => ws === sock;
 
-  ws.addEventListener('open', () => {
+  sock.addEventListener('open', () => {
+    if (!isCurrent()) return;
     console.log('[aaa/offscreen] WS open');
     backoff = MIN_BACKOFF_MS;
     broadcastStatus(true);
@@ -41,7 +47,8 @@ function connect(): void {
     heartbeat = setInterval(() => send({ type: 'ping' }), HEARTBEAT_MS);
   });
 
-  ws.addEventListener('message', (ev) => {
+  sock.addEventListener('message', (ev) => {
+    if (!isCurrent()) return;
     const data = typeof ev.data === 'string' ? ev.data : '';
     let parsed: unknown;
     try {
@@ -63,18 +70,21 @@ function connect(): void {
       .catch(() => {});
   });
 
-  ws.addEventListener('close', () => {
+  sock.addEventListener('close', () => {
+    if (!isCurrent()) return;
     console.log(`[aaa/offscreen] WS closed; retry in ${backoff}ms`);
     if (heartbeat) {
       clearInterval(heartbeat);
       heartbeat = null;
     }
     broadcastStatus(false);
+    ws = null;
     reconnectTimer = setTimeout(connect, backoff);
     backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
   });
 
-  ws.addEventListener('error', () => {
+  sock.addEventListener('error', () => {
+    if (!isCurrent()) return;
     console.warn('[aaa/offscreen] WS error');
   });
 }

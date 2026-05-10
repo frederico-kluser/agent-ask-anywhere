@@ -124,15 +124,12 @@ export function acquireLock(port: number, path: string = LOCK_FILE): () => void 
     }
   };
 
+  // Last-resort cleanup on normal exit. We do NOT register SIGINT/SIGTERM
+  // handlers here because the main process owns graceful shutdown — a
+  // process.exit(0) inside a signal handler would short-circuit the http
+  // server's close() and orphan in-flight requests. The caller is expected
+  // to call release() during its own shutdown path.
   process.on('exit', release);
-  process.on('SIGINT', () => {
-    release();
-    process.exit(0);
-  });
-  process.on('SIGTERM', () => {
-    release();
-    process.exit(0);
-  });
 
   return release;
 }

@@ -396,16 +396,45 @@ async function onSave(form: HTMLFormElement, skill: SkillFull): Promise<void> {
   if (!validate(newName, description)) return;
 
   if (newName !== skill.name) {
-    await fetch(`${HTTP}/skills/${encodeURIComponent(skill.name)}`, {
+    // Renames are non-atomic (DELETE-then-POST). Pre-check that the target
+    // name doesn't already exist so we don't delete the source draft only
+    // for the create to fail with 409.
+    const conflict = allSkills.some((s) => s.name === newName);
+    if (conflict) {
+      alert(
+        `A skill named "${newName}" already exists. Pick a different name or delete the existing one first.`,
+      );
+      return;
+    }
+    const delResp = await fetch(`${HTTP}/skills/${encodeURIComponent(skill.name)}`, {
       method: 'DELETE',
     });
+    if (!delResp.ok && delResp.status !== 404) {
+      alert(`Rename failed (delete): HTTP ${delResp.status} ${await delResp.text()}`);
+      return;
+    }
     const r = await fetch(`${HTTP}/skills`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newName, description, flow, slots, body }),
     });
     if (!r.ok) {
-      alert(`Save failed: HTTP ${r.status} ${await r.text()}`);
+      // Best-effort restore of the original so the user doesn't lose work
+      // on a transient failure. If this restore also fails the user will
+      // see the upstream error.
+      const restore = await fetch(`${HTTP}/skills`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: skill.name,
+          description: skill.description,
+          flow: skill.flow,
+          slots: skill.frontmatter.slots ?? [],
+          body: skill.body,
+        }),
+      });
+      const restoreNote = restore.ok ? ' (original restored)' : ' (ORIGINAL LOST)';
+      alert(`Rename failed: HTTP ${r.status} ${await r.text()}${restoreNote}`);
       return;
     }
     activeName = newName;

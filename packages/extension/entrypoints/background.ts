@@ -246,7 +246,12 @@ async function ensureOffscreen(): Promise<void> {
     if (await chrome.offscreen.hasDocument()) return;
     await chrome.offscreen.createDocument({
       url: 'offscreen.html',
-      reasons: ['BLOBS' as chrome.offscreen.Reason],
+      // WORKERS is more idiomatic than BLOBS for a long-lived persistent
+      // bridge — chrome docs note that only AUDIO_PLAYBACK auto-terminates,
+      // but mismatched reasons may be policed in future versions. Neither
+      // BLOBS nor WORKERS map exactly to "WebSocket"; WORKERS aligns
+      // semantically with "background JS keep-alive".
+      reasons: ['WORKERS' as chrome.offscreen.Reason],
       justification: 'Maintain WebSocket bridge to local lobby (port 7878)',
     });
     console.log('[aaa/background] offscreen created');

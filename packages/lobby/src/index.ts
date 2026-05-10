@@ -38,7 +38,10 @@ async function main(): Promise<void> {
   attachWsHandlers(wss, { skills, broker });
 
   httpServer.on('upgrade', (req, socket, head) => {
-    if (req.url !== '/ws' && req.url !== '/') {
+    // Parse only the pathname so query strings and fragments don't reject the
+    // upgrade (e.g., a debug client connecting to /ws?token=…).
+    const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
+    if (pathname !== '/ws' && pathname !== '/') {
       socket.destroy();
       return;
     }

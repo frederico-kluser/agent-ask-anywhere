@@ -279,6 +279,9 @@ function postRun(payload) {
 
   let result;
   try {
+    // Pass timeoutMs so the lobby honors the same deadline this client
+    // expects; otherwise the lobby falls back to its own default (5min)
+    // which can disagree with AAA_RUN_TIMEOUT_MS.
     result = await postRun({
       flowId: meta.name,
       flow,
