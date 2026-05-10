@@ -3,19 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>agent-ask-anywhere — options</title>
+    <title>agent-ask-anywhere — skill wizard</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <header>
       <img src="/icon/48.png" alt="" width="32" height="32" />
       <h1>agent-ask-anywhere</h1>
-      <span class="version">v1.0.0</span>
+      <span class="version">v1.0.0 · skill generator</span>
       <span id="server-status" class="server-status">·</span>
     </header>
     <main>
       <aside>
-        <input id="filter" type="search" placeholder="Filter skills…" />
+        <input id="filter" type="search" placeholder="Filter drafts…" />
         <ul id="skill-list" class="skill-list"></ul>
         <div class="actions">
           <label class="btn">
@@ -23,9 +23,13 @@
             Import .skill
           </label>
         </div>
+        <p class="hint">
+          Drafts auto-save when you record in the popup. Pick one to refine
+          slots and export as <code>.skill</code>.
+        </p>
       </aside>
       <section id="detail" class="detail">
-        <p class="empty">Select a skill on the left to view details.</p>
+        <p class="empty">Select a draft on the left, or record a new one from the popup.</p>
       </section>
     </main>
     <script type="module" src="./main.ts"></script>

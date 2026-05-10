@@ -8,7 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev:server": "pnpm --filter server dev",
+    "dev:lobby": "pnpm --filter lobby dev",
     "dev:extension": "pnpm --filter extension dev",
     "build": "pnpm -r build",
     "lint": "biome check .",

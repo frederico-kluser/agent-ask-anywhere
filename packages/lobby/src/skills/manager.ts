@@ -1,4 +1,3 @@
-import { execSync } from 'node:child_process';
 import { type Dirent, existsSync, mkdirSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -14,7 +13,8 @@ import matter from 'gray-matter';
 import { logger } from '../logger.js';
 
 export const SKILLS_ROOT =
-  process.env.AAA_SKILLS_ROOT ?? resolve(homedir(), '.local', 'agent-skills');
+  process.env.AAA_SKILLS_ROOT ??
+  resolve(homedir(), '.local', 'share', 'agent-ask-anywhere', 'skills');
 
 export type SkillSummary = {
   name: string;
@@ -52,7 +52,6 @@ export class SkillsManager {
 
   async init(): Promise<void> {
     if (!existsSync(SKILLS_ROOT)) mkdirSync(SKILLS_ROOT, { recursive: true });
-    this.ensureGit();
     await this.scan();
     this.watch();
     logger.info({ root: SKILLS_ROOT, count: this.cache.size }, 'skills manager ready');
@@ -61,19 +60,6 @@ export class SkillsManager {
   async close(): Promise<void> {
     await this.watcher?.close();
     this.watcher = null;
-  }
-
-  private ensureGit(): void {
-    try {
-      execSync('git rev-parse --git-dir', { cwd: SKILLS_ROOT, stdio: 'ignore' });
-    } catch {
-      try {
-        execSync('git init -b main', { cwd: SKILLS_ROOT, stdio: 'ignore' });
-        logger.info({ root: SKILLS_ROOT }, 'git initialized in skills root');
-      } catch (err) {
-        logger.warn({ err: String(err) }, 'git init failed (skills will not be versioned)');
-      }
-    }
   }
 
   private async scan(): Promise<void> {
@@ -131,7 +117,6 @@ export class SkillsManager {
   private watch(): void {
     let timer: NodeJS.Timeout | null = null;
     this.watcher = chokidar.watch(SKILLS_ROOT, {
-      ignored: (p: string) => p.includes(`${SKILLS_ROOT}/.git`),
       ignoreInitial: true,
       depth: 3,
     });
@@ -188,7 +173,6 @@ export class SkillsManager {
     const md = matter.stringify(input.body ?? defaultBody(fm), fm as Record<string, unknown>);
     await writeFile(join(dir, 'SKILL.md'), md, 'utf8');
     await writeFile(join(dir, 'flow.json'), JSON.stringify(input.flow, null, 2), 'utf8');
-    this.gitCommit(`add: ${fm.name}`);
     await this.scan();
     this.notify();
     const created = this.cache.get(fm.name);
@@ -211,7 +195,6 @@ export class SkillsManager {
     const md = matter.stringify(body, fm as Record<string, unknown>);
     await writeFile(join(dir, 'SKILL.md'), md, 'utf8');
     await writeFile(join(dir, 'flow.json'), JSON.stringify(flow, null, 2), 'utf8');
-    this.gitCommit(`update: ${name}`);
     await this.scan();
     this.notify();
     return this.cache.get(name) ?? null;
@@ -221,23 +204,9 @@ export class SkillsManager {
     if (!this.cache.has(name)) return false;
     const dir = join(SKILLS_ROOT, name);
     await rm(dir, { recursive: true, force: true });
-    this.gitCommit(`remove: ${name}`);
     this.cache.delete(name);
     this.notify();
     return true;
-  }
-
-  private gitCommit(message: string): void {
-    try {
-      execSync('git add -A', { cwd: SKILLS_ROOT, stdio: 'ignore' });
-      const safeMsg = JSON.stringify(message);
-      execSync(
-        `git -c user.name=agent-ask-anywhere -c user.email=ext@local commit -m ${safeMsg} --allow-empty`,
-        { cwd: SKILLS_ROOT, stdio: 'ignore' },
-      );
-    } catch {
-      // ignore (e.g., nothing to commit, or git unavailable)
-    }
   }
 }
 

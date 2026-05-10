@@ -111,6 +111,14 @@ aside {
   color: var(--accent);
   border-color: var(--accent);
 }
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.btn-primary:hover {
+  background: #e23700;
+}
 .detail {
   padding: 20px 24px;
   overflow-y: auto;
@@ -135,10 +143,6 @@ aside {
   align-items: flex-start;
   gap: 16px;
 }
-.detail .desc {
-  margin: 0 0 16px;
-  font-size: 14px;
-}
 .detail pre {
   background: rgba(127, 127, 127, 0.08);
   border-radius: 6px;
@@ -146,28 +150,96 @@ aside {
   font-size: 12px;
   overflow-x: auto;
   font-family: ui-monospace, monospace;
+  max-height: 240px;
 }
-.detail .slots,
-.detail .runs {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.hint {
+  font-size: 11px;
+  opacity: 0.7;
+  margin: 8px 0;
+}
+.hint code {
+  font-family: ui-monospace, monospace;
+  background: rgba(127, 127, 127, 0.15);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wizard .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   font-size: 12px;
 }
-.detail .slots li,
-.detail .runs li {
-  padding: 6px 0;
-  border-bottom: 1px solid var(--border);
-}
-.slot-required {
-  color: var(--accent);
-  font-weight: 600;
-}
-.slot-type {
-  font-family: ui-monospace, monospace;
-  background: rgba(127, 127, 127, 0.12);
-  padding: 1px 6px;
-  border-radius: 3px;
-  margin-right: 6px;
+.wizard .field span {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
   font-size: 11px;
+}
+.wizard input[type="text"],
+.wizard textarea {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+}
+.wizard textarea {
+  resize: vertical;
+  font-family: ui-monospace, monospace;
+}
+.slot-row {
+  display: grid;
+  grid-template-columns: 1fr 100px 2fr 90px 28px;
+  gap: 6px;
+  margin: 4px 0;
+  align-items: center;
+}
+.slot-row input,
+.slot-row select {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+}
+.slot-required-toggle {
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.85;
+}
+.slot-remove {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--accent);
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1;
+}
+.slot-remove:hover {
+  background: rgba(255, 62, 0, 0.1);
+}
+.wizard-actions {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 8px;
+}
+.link {
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.link:hover {
+  text-decoration: underline;
 }

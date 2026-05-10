@@ -1,7 +1,7 @@
 import { type WSMessage, WSMessageSchema } from '@agent-ask-anywhere/shared';
 import type { WebSocket, WebSocketServer } from 'ws';
-import type { ExtensionRpc } from './llm/extension-rpc.js';
 import { logger } from './logger.js';
+import type { RunBroker } from './run-broker.js';
 import type { SkillsManager } from './skills/manager.js';
 import { RecordingBuffer } from './skills/recording-buffer.js';
 
@@ -9,7 +9,12 @@ const HEARTBEAT_MS = 20_000;
 
 export type WsContext = {
   skills: SkillsManager;
-  rpc: ExtensionRpc;
+  broker: RunBroker;
+};
+
+type PeerState = {
+  role: 'unknown' | 'extension' | 'skill-client' | 'wizard';
+  unregister: (() => void) | null;
 };
 
 export function attachWsHandlers(wss: WebSocketServer, ctx: WsContext): void {
@@ -24,6 +29,7 @@ export function attachWsHandlers(wss: WebSocketServer, ctx: WsContext): void {
     const peer = req.socket.remoteAddress ?? 'unknown';
     logger.info({ peer }, 'WS client connected');
     const buffer = new RecordingBuffer(ctx.skills);
+    const state: PeerState = { role: 'unknown', unregister: null };
 
     const heartbeat = setInterval(() => {
       if (ws.readyState === ws.OPEN) {
@@ -49,20 +55,21 @@ export function attachWsHandlers(wss: WebSocketServer, ctx: WsContext): void {
         });
         return;
       }
-      void handleMessage(ws, result.data, buffer, ctx);
+      void handleMessage(ws, result.data, buffer, ctx, state);
     });
 
     ws.on('close', () => {
       clearInterval(heartbeat);
       buffer.abort();
-      logger.info({ peer }, 'WS client disconnected');
+      state.unregister?.();
+      logger.info({ peer, role: state.role }, 'WS client disconnected');
     });
 
     ws.on('error', (err) => {
       logger.error({ err: String(err) }, 'WS error');
     });
 
-    send(ws, { type: 'hello', client: 'server', version: '1.0.0' });
+    send(ws, { type: 'hello', client: 'lobby', version: '1.0.0' });
     send(ws, { type: 'skills:updated', skills: ctx.skills.list() });
   });
 }
@@ -72,10 +79,27 @@ async function handleMessage(
   msg: WSMessage,
   buffer: RecordingBuffer,
   ctx: WsContext,
+  state: PeerState,
 ): Promise<void> {
   switch (msg.type) {
     case 'hello':
       logger.info({ client: msg.client, version: msg.version }, 'WS handshake');
+      // The extension was the only WS client in the old protocol. Maintain
+      // backward compatibility by treating client='extension' as a peer:register.
+      if (msg.client === 'extension' && state.role === 'unknown') {
+        state.role = 'extension';
+        state.unregister = ctx.broker.registerExtension(ws);
+      }
+      break;
+    case 'peer:register':
+      if (state.role !== 'unknown') {
+        logger.warn({ from: state.role, to: msg.role }, 'peer already registered');
+        return;
+      }
+      state.role = msg.role;
+      if (msg.role === 'extension') {
+        state.unregister = ctx.broker.registerExtension(ws);
+      }
       break;
     case 'ping':
       send(ws, { type: 'pong' });
@@ -98,7 +122,7 @@ async function handleMessage(
     case 'flow:result':
     case 'step:result':
     case 'page:state':
-      ctx.rpc.handleIncoming(msg);
+      ctx.broker.handleIncoming(msg);
       break;
     default:
       logger.debug({ type: msg.type }, 'WS message (no handler)');

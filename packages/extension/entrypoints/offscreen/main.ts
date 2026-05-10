@@ -1,7 +1,7 @@
 import { type WSMessage, WSMessageSchema } from '@agent-ask-anywhere/shared';
 import { type ExtMessage, ExtMessageSchema } from '../../lib/messaging.js';
 
-const WS_URL = 'ws://localhost:8765';
+const WS_URL = 'ws://127.0.0.1:7878/ws';
 const HEARTBEAT_MS = 20_000;
 const MIN_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
@@ -36,6 +36,7 @@ function connect(): void {
     backoff = MIN_BACKOFF_MS;
     broadcastStatus(true);
     send({ type: 'hello', client: 'extension', version: '1.0.0' });
+    send({ type: 'peer:register', role: 'extension' });
     if (heartbeat) clearInterval(heartbeat);
     heartbeat = setInterval(() => send({ type: 'ping' }), HEARTBEAT_MS);
   });
@@ -74,7 +75,6 @@ function connect(): void {
   });
 
   ws.addEventListener('error', () => {
-    // 'close' event will follow; nothing to do here beyond logging.
     console.warn('[aaa/offscreen] WS error');
   });
 }

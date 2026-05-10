@@ -16,7 +16,7 @@ let recording = false;
 function renderConnection(c: boolean): void {
   connected = c;
   if (statusEl) {
-    statusEl.textContent = c ? 'Connected to localhost:8765' : 'Disconnected';
+    statusEl.textContent = c ? 'Connected to lobby :7878' : 'Disconnected';
   }
   if (dotEl) {
     dotEl.className = c ? 'dot dot-on' : 'dot dot-off';
@@ -45,4 +45,9 @@ onRecorderState(renderRecording);
 recordBtn?.addEventListener('click', () => {
   if (!connected) return;
   void commandRecorder(recording ? 'stop' : 'start');
+});
+
+document.getElementById('open-options')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  void chrome.runtime.openOptionsPage();
 });

@@ -1,11 +1,19 @@
 import { z } from 'zod';
 import { FlowSchema } from './flow-schema.js';
 
+export const PeerRoleSchema = z.enum(['extension', 'skill-client', 'wizard']);
+export type PeerRole = z.infer<typeof PeerRoleSchema>;
+
 export const WSMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('hello'),
-    client: z.enum(['extension', 'server']),
+    client: z.enum(['extension', 'lobby', 'skill-client', 'wizard']),
     version: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('peer:register'),
+    role: PeerRoleSchema,
+    runId: z.string().optional(),
   }),
   z.object({ type: z.literal('ping') }),
   z.object({ type: z.literal('pong') }),
@@ -20,7 +28,7 @@ export const WSMessageSchema = z.discriminatedUnion('type', [
     flowId: z.string(),
     flow: FlowSchema.optional(),
     slots: z.record(z.string()).default({}),
-    runId: z.string().optional(),
+    runId: z.string(),
   }),
   z.object({
     type: z.literal('flow:result'),
@@ -32,7 +40,7 @@ export const WSMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('step:result'),
-    runId: z.string().optional(),
+    runId: z.string(),
     stepIdx: z.number().int().nonnegative(),
     ok: z.boolean(),
     error: z.string().optional(),

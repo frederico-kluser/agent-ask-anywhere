@@ -1,5 +1,18 @@
 # Guia Técnico — agent-ask-anywhere
 
+> ⚠️ **Documento legado.** A arquitetura descrita aqui (Fastify
+> :7860 + WebSocket :8765 + LLM orchestrator + secrets keystore) foi
+> substituída pela arquitetura **"Skill generator + lobby WS auto-spawn"**
+> em maio/2026. Para a arquitetura atual, leia o
+> [`README.md`](../README.md), [`AGENTS.md`](../AGENTS.md) e
+> [`REFACTOR_REPORT.md`](../REFACTOR_REPORT.md).
+>
+> As partes que continuam idênticas (recorder, synthetic/CDP replay,
+> force-open-shadow, captcha-watch, schemas Zod do `Flow`/`SkillFrontmatter`)
+> seguem como descritas. Só mudou a camada de transporte (porta única
+> :7878 com HTTP+WS multiplex) e a forma de distribuição da skill (zip
+> `.skill` plug-and-play com `run.js` + `lobby-bootstrap.js`).
+
 Este documento é o **guia técnico completo** do projeto. Para instruções de
 uso, leia o [`README.md`](../README.md). Para as regras invioláveis que um
 agente LLM precisa saber antes de tocar no código,

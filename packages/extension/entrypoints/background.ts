@@ -4,7 +4,7 @@ import { generateAxText } from '../lib/page/ax-tree.js';
 import { syncForceOpenShadow } from '../lib/replay/force-open-shadow.js';
 import { runFlow } from '../lib/replay/runner.js';
 
-const SKILLS_HTTP_URL = 'http://127.0.0.1:7860';
+const LOBBY_HTTP_URL = 'http://127.0.0.1:7878';
 
 let recordingTabId: number | null = null;
 let lastNavUrl = '';
@@ -109,7 +109,7 @@ async function handleFlowRun(payload: WSMessage & { type: 'flow:run' }): Promise
     console.warn('[aaa/background] no active tab for flow:run');
     return;
   }
-  const runId = payload.runId ?? `run-${Date.now()}`;
+  const runId = payload.runId;
   let flow: Flow | null = payload.flow ?? null;
   if (!flow) {
     flow = await fetchFlow(payload.flowId);
@@ -174,13 +174,13 @@ async function handlePageGetState(requestId: string): Promise<void> {
 
 async function refreshForceOpenShadow(): Promise<void> {
   try {
-    const resp = await fetch(`${SKILLS_HTTP_URL}/skills`);
+    const resp = await fetch(`${LOBBY_HTTP_URL}/skills`);
     if (!resp.ok) return;
     const list = (await resp.json()) as Array<{ name: string }>;
     const detailed = await Promise.all(
       list.map(async (s) => {
         try {
-          const d = await fetch(`${SKILLS_HTTP_URL}/skills/${s.name}`);
+          const d = await fetch(`${LOBBY_HTTP_URL}/skills/${s.name}`);
           if (!d.ok) return null;
           return (await d.json()) as {
             frontmatter?: { metadata?: { force_open_shadow?: string[] } };
@@ -199,7 +199,7 @@ async function refreshForceOpenShadow(): Promise<void> {
 
 async function fetchFlow(flowId: string): Promise<Flow | null> {
   try {
-    const resp = await fetch(`${SKILLS_HTTP_URL}/skills/${encodeURIComponent(flowId)}`);
+    const resp = await fetch(`${LOBBY_HTTP_URL}/skills/${encodeURIComponent(flowId)}`);
     if (!resp.ok) return null;
     const skill = (await resp.json()) as { flow?: unknown };
     const parsed = FlowSchema.safeParse(skill.flow);
@@ -247,7 +247,7 @@ async function ensureOffscreen(): Promise<void> {
     await chrome.offscreen.createDocument({
       url: 'offscreen.html',
       reasons: ['BLOBS' as chrome.offscreen.Reason],
-      justification: 'Maintain WebSocket bridge to local Node.js server',
+      justification: 'Maintain WebSocket bridge to local lobby (port 7878)',
     });
     console.log('[aaa/background] offscreen created');
   } catch (err) {

@@ -36,11 +36,16 @@ describe('SlotSchema', () => {
     assert.equal(r.success, true);
   });
 
-  it('accepts the four slot types', () => {
-    for (const type of ['string', 'choice', 'dynamic', 'secret']) {
+  it('accepts the three slot types', () => {
+    for (const type of ['string', 'choice', 'dynamic']) {
       const r = SlotSchema.safeParse({ name: 's', type, description: 'x' });
       assert.equal(r.success, true, `type ${type} should parse`);
     }
+  });
+
+  it('rejects the legacy "secret" slot type (removed in 1.0 lobby refactor)', () => {
+    const r = SlotSchema.safeParse({ name: 's', type: 'secret', description: 'x' });
+    assert.equal(r.success, false);
   });
 
   it('rejects unknown slot type', () => {

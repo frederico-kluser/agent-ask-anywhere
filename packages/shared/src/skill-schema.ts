@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const SlotTypeSchema = z.enum(['string', 'choice', 'dynamic', 'secret']);
+export const SlotTypeSchema = z.enum(['string', 'choice', 'dynamic']);
 export type SlotType = z.infer<typeof SlotTypeSchema>;
 
 export const SlotSchema = z.object({
